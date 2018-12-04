@@ -80,7 +80,6 @@ void main()
     static int nobreak = 1;
     mar = 0;
     while (nobreak) {
-        sync;
         switch (state) {
             case READ_SIGN:
                 read_mem();
