@@ -5,7 +5,6 @@ static int r0, r1, r2, r3, r4, r5;
 int main(int argc, char *argv[])
 {
     r0 = r1 = r2 = r3 = r4 = r5 = 0;
-    r0 = 975;
     for(;;r1++)
     switch (r1) {
     case 0: r4 = 123; break;

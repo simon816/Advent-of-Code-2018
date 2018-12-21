@@ -3,7 +3,6 @@ static int r0, r1, r2, r3, r4, r5;
 
 int main(int argc, char *argv[]) {
     r0 = r1 = r2 = r3 = r4 = r5 = 0;
-    r0 = 15823996;
 
     start:
     r4 = 0;
