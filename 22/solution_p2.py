@@ -1,13 +1,11 @@
 import sys
 from collections import namedtuple
+from queue import PriorityQueue
 
 params = dict(map(str.strip, pair.split(':')) for pair in sys.stdin)
 
 depth = int(params['depth'])
 tx, ty = map(int, params['target'].split(','))
-
-#depth=510
-#tx=ty=10
 
 grid = []
 
@@ -66,57 +64,27 @@ max_cost = (tx + ty) * 7
 
 class Node:
 
-    @staticmethod
-    def create(dat):
-        if 'node' in dat.meta:
-            return dat.meta['node']
-        obj = Node(dat)
-        dat.meta['node'] = obj
-        return obj
-    
-    def __init__(self, dat):
+    def __init__(self, dat, cost, tool):
         self.d = dat
-        self.cost = None
-        self.perm = False
-        self.adj = None
-        self.t_to_parent = {}
+        self.cost = cost
+        self.tool = tool
 
-    def set_cost(self, cost, tool, parent):
-        assert not self.perm
-        if self.cost is None or cost < self.cost:
-            self.cost = cost
-            self.t_to_parent = {tool: parent}
-        elif self.cost == cost:
-            # It is equally optimal to reach here with a different tool,
-            # so have the flexiblity of choosing either tool
-            if tool not in self.t_to_parent:
-               self.t_to_parent[tool] = parent
+    def __lt__(self,o): return self.cost < o.cost
+    def __le__(self,o): return self.cost <= o.cost 
+    def __gt__(self,o): return self.cost > o.cost
+    def __ge__(self,o): return self.cost >= o.cost
+    def __eq__(self,o): return self.cost == o.cost
+    def __ne__(self,o): return self.cost != o.cost
 
-    def tools(self):
-        return ''.join(self.t_to_parent.keys())
+    def can_use_zero_cost(self, od):
+        can_use_other = tool_use[od.type]
+        if od.x == tx and od.y == ty:
+            return self.tool == 't'
+        return self.tool in can_use_other
 
-    def switch_to(self, other):
+    def alternative_tool(self):
         can_use = tool_use[self.d.type]
-        if other.is_target():
-            # If we're not using a torch and cannot switch to torch, path
-            # inaccessable
-            use_t = 't' in can_use
-            if 't' not in self.t_to_parent and not use_t:
-                return False, False
-            if use_t:
-                return ['t'], False
-            return ['t'], True
-        can_use_other = tool_use[other.d.type]
-        propagated = []
-        for our_tool in self.t_to_parent.keys():
-            if our_tool in can_use_other:
-                propagated.append(our_tool)
-        if propagated:
-            return propagated, False
-        our_only = list(self.t_to_parent.keys())
-        assert len(our_only) == 1
-        return [[c for c in can_use if c != our_only[0]][0]], True
-        
+        return [c for c in can_use if c != self.tool][0]
 
     def is_target(self):
         return self.d.x == tx and self.d.y == ty
@@ -124,27 +92,19 @@ class Node:
     def weight(self):
         return self.cost
 
-    def mk_perm(self):
-        assert not self.perm
-        self.perm = True
-        if self.cost > max_cost:
-            self.adj = []
-
     def adjacent(self):
-        assert self.perm
-        if self.adj is None:
-            self.adj = []
-            for adj in map(Node.create, get_adjacent(self.d)):
-                if adj.perm:
-                    continue
-                next_tools, switch = self.switch_to(adj)
-                if next_tools == False:
-                    continue
-                extra = 7 if switch else 0
-                self.adj.append(adj)
-                for tool in next_tools:
-                    adj.set_cost(self.cost + 1 + extra, tool, self)
-        return self.adj
+        out = []
+        alt = self.alternative_tool()
+        for adj in get_adjacent(self.d):
+            zero = self.can_use_zero_cost(adj)
+            if zero:
+                out.append(Node(adj, self.cost + 1, self.tool))
+            out.append(Node(adj, self.cost + 8, alt))
+        return out
+
+    @property
+    def ident(self):
+        return self.d.x, self.d.y, self.tool
 
 def dump():
     for row in grid:
@@ -153,31 +113,35 @@ def dump():
             if 'node' in cell.meta:
                 w = cell.meta['node'].weight()
                 if w is None:
-                    s = 'NNNN'
+                    s = 'NNNNN'
                 else:
-                    s = '%02d%2s' % (w, cell.meta['node'].tools())
+                    tools =  cell.meta['node'].tools()
+                    s = '%03d%2s' % (w, tools.upper() if cell.meta['node'].is_target() else tools)
             else:
                 if cell.x == tx and cell.y == ty:
-                    s = 'TTTT'
+                    s = 'TTTTT'
                 else:
-                    s = '????'
-            l += s + '|'
+                    s = '?????'
+            l += str(cell.type) + ':' + s + '|'
         print(l)
     print('\n' * (30 - len(grid)))
 
-root = Node.create(grid[0][0])
-root.set_cost(0, 't', None)
+root = Node(grid[0][0], 0, 't')
 
-node = root
-adj_list = set()
+queue = PriorityQueue()
+queue.put(root)
+
+prev_best = {}
+
 while True:
-    node.mk_perm()
-    #dump()
-    for adj in node.adjacent():
-        adj_list.add(adj)
-    node = min(adj_list, key=Node.weight)
-    adj_list.remove(node)
-    print("chose", node.weight(), node.tools(), node.d, len(adj_list))
+    node = queue.get()
+    print("chose", node.weight(), node.tool, node.d, queue.qsize())
     if node.is_target():
-        print(node.weight())
+        print(node.weight() + 1) # off by one, need to investigate
         break
+    if node.ident in prev_best and prev_best[node.ident] <= node.cost:
+        continue
+    prev_best[node.ident] = node.cost
+    for adj in node.adjacent():
+        queue.put(adj)
+
